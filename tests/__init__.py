@@ -1,4 +1,5 @@
 import unittest
+from timeit import timeit
 
 import numpy as np
 from matplotlib import pyplot
@@ -150,3 +151,25 @@ class ModelSolverTest(unittest.TestCase):
 
         fig.subplots_adjust(hspace=0.3, wspace=0.3)
         fig.show()
+
+    def solve(self, accuracy):
+        grid = np.linspace(1, 4, accuracy)
+        solution = self.solver.solve_with_boundary_conditions(grid, self.boundary_conditions)
+
+        return solution
+
+    def test_time(self):
+        execution_time = timeit(lambda: self.solve(1000), globals=globals(), number=3)
+        print("Execution time: ", execution_time, "sec for 1000")
+
+        execution_time = timeit(lambda: self.solve(10_000), globals=globals(), number=3)
+        print("Execution time: ", execution_time, "sec for 10 000")
+
+        execution_time = timeit(lambda: self.solve(100_000), globals=globals(), number=3)
+        print("Execution time: ", execution_time, "sec for 100 000")
+
+        execution_time = timeit(lambda: self.solve(1_000_000), globals=globals(), number=3)
+        print("Execution time: ", execution_time, "sec for 1 000 000")
+
+        execution_time = timeit(lambda: self.solve(10_000_000), globals=globals(), number=3)
+        print("Execution time: ", execution_time, "sec for 10 000 000")
