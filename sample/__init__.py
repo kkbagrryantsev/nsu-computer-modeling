@@ -1,5 +1,8 @@
+__all__ = ['LinearNonhomogenousDifferentialEquation']
+
+import math
+
 import numpy as np
-from matplotlib import pyplot
 
 
 class LinearNonhomogenousDifferentialEquation:
@@ -11,45 +14,69 @@ class LinearNonhomogenousDifferentialEquation:
     def solve_with_initial_condintions(self, start, stop, accuracy: int, method='runge_kutta'):
         raise NotImplementedError()
 
+    def _calculate_coeffs(self, grid, boundary_conditions, grid_type='regular'):
+        n = len(grid)
+
+        A = np.zeros(n)
+        C = np.zeros(n)
+        B = np.zeros(n)
+        F = np.zeros(n)
+
+        A[0] = 0
+        C[0] = -1
+        B[0] = 0
+        F[0] = boundary_conditions[0]
+
+        A[n - 1] = 0
+        C[n - 1] = -1
+        B[n - 1] = 0
+        F[n - 1] = boundary_conditions[-1]
+
+        match grid_type:
+            case 'regular':
+                h = (grid[-1] - grid[0]) / (n - 1)
+                for i in range(1, n - 1):
+                    A[i] = self._regular_A_i(grid[i], h)
+                    C[i] = self._regular_C_i(grid[i], h)
+                    B[i] = self._regular_B_i(grid[i], h)
+                    F[i] = self._regular_F_i(grid[i], h)
+                return A, C, B, F
+
+            case 'irregular':
+                for i in range(1, n - 1):
+                    delta_x_i = grid[i] - grid[i - 1]
+                    delta_x_j = grid[i + 1] - grid[i]
+                    A[i] = self._irregular_A_i(grid[i], delta_x_i, delta_x_j)
+                    C[i] = self._irregular_C_i(grid[i], delta_x_i, delta_x_j)
+                    B[i] = self._irregular_B_i(grid[i], delta_x_i, delta_x_j)
+                    F[i] = self._irregular_F_i(grid[i], delta_x_i, delta_x_j)
+                return A, C, B, F
+            case _:
+                raise ValueError(f'Grid type {grid_type} not supported')
+
     def solve_with_boundary_conditions(self, grid, boundary_conditions, grid_type='regular',
                                        method='thomas'):
-        if grid_type == 'regular':
-            n = len(grid)
-            h = (grid[n - 1] - grid[0]) / n
+        n = len(grid)
 
-            A = np.zeros(n)
-            C = np.zeros(n)
-            B = np.zeros(n)
-            F = np.zeros(n)
+        A, C, B, F = self._calculate_coeffs(grid, boundary_conditions, grid_type)
 
-            A[0] = 0
-            C[0] = -1
-            B[0] = 0
-            F[0] = self._F_i(grid[0], h)
-            for i in range(1, n - 1):
-                A[i] = self._A_i(grid[i], h)
-                C[i] = self._C_i(grid[i], h)
-                B[i] = self._B_i(grid[i], h)
-                F[i] = self._F_i(grid[i], h)
-            C[n - 1] = -1
-            A[n - 1] = 0
-            B[n - 1] = 0
-            F[n - 1] = self._F_i(grid[n - 1], h)
-
-            match method:
-                case 'thomas':
-                    Y = LinearNonhomogenousDifferentialEquation.thomas_algorithm(A, C, B, F, boundary_conditions)
-                    result = np.zeros((n, 2))
-                    for i, x in enumerate(grid):
-                        result[i] = [x, Y[i]]
-                    return result
-                case _:
-                    raise ValueError(f'Method {method} not supported')
+        match method:
+            case 'thomas':
+                Y = LinearNonhomogenousDifferentialEquation.thomas_algorithm(A, C, B, F, boundary_conditions)
+                result = np.zeros((n, 2))
+                for i, x in enumerate(grid):
+                    result[i] = [x, Y[i]]
+                return result
+            case _:
+                raise ValueError(f'Method {method} not supported')
 
     @staticmethod
     def thomas_algorithm(A, C, B, F, boundary_conditions):
         assert A.shape == C.shape == B.shape == F.shape
+
         n = len(A)
+
+        # Forward sweep
         alpha = np.zeros(n)
         beta = np.zeros(n)
         alpha[0] = - B[0] / C[0]
@@ -58,6 +85,7 @@ class LinearNonhomogenousDifferentialEquation:
             alpha[i] = B[i] / (C[i] - A[i] * alpha[i - 1])
             beta[i] = (A[i] * beta[i - 1] - F[i]) / (C[i] - A[i] * alpha[i - 1])
 
+        # Backward sweep
         Y = np.zeros(n)
         Y[0] = boundary_conditions[0]
         Y[n - 1] = boundary_conditions[1]
@@ -67,72 +95,71 @@ class LinearNonhomogenousDifferentialEquation:
         return Y
 
     @staticmethod
-    def compare_solutions(model_solution, test_solution):
-        """Compares two solutions using mean squared error"""
-        # interp_func = interpolate.interp1d(test_solution[:, 0], test_solution[:, 1], kind='linear')
-        # interpolated_solution2 = interp_func(model_solution[:, 0])
+    def _linear_function(point1, point2):
+        x1, y1 = point1
+        x2, y2 = point2
 
-        interpolated_solution = np.interp(model_solution[:, 0], test_solution[:, 0], test_solution[:, 1])
+        slope = (y2 - y1) / (x2 - x1)
+        intercept = y1 - slope * x1
 
-        # pyplot.plot(model_solution[:, 0], interpolated_solution, color='brown')
-        difference = np.abs(model_solution[:, 1] - interpolated_solution)
-        # pyplot.plot(model_solution[:, 0], difference, color='red')
-        mean_difference = np.mean(difference)
+        return lambda x: slope * x + intercept
 
-        return mean_difference
+    @staticmethod
+    def compare_solutions(model_solution, test_solution, method='mae'):
+        """Compares two solutions using one of the specified methods"""
+        assert model_solution[:, 0].min() == test_solution[:, 0].min()
+        assert model_solution[:, 0].max() == test_solution[:, 0].max()
 
-    def _A_i(self, x_i, h):
+        if model_solution[:, 0].size >= test_solution[:, 0].size:
+            interpolated_solution = test_solution
+            solution = model_solution
+        else:
+            interpolated_solution = model_solution
+            solution = test_solution
+
+        if model_solution.shape[0] == test_solution.shape[0]:
+            interpolated_values = interpolated_solution[:, 1]
+        else:
+            interpolated_values = np.interp(solution[:, 0], interpolated_solution[:, 0], interpolated_solution[:, 1])
+
+        match method:
+            case 'mae':
+                difference = np.abs(solution[:, 1] - interpolated_values)
+                return np.mean(difference)
+            case 'mse':
+                squared_difference = np.square(solution[:, 1] - interpolated_values)
+                return np.mean(squared_difference)
+            case 'rmse':
+                squared_difference = np.square(solution[:, 1] - interpolated_values)
+                mean_squared_difference = np.mean(squared_difference)
+                return math.sqrt(mean_squared_difference)
+            case 'relative_error':
+                return np.abs(solution[:, 1] - interpolated_values) / np.abs(solution[:, 1]) * 100
+            case 'max_absolute_error':
+                return np.max(np.abs(solution[:, 1] - interpolated_values))
+            case _:
+                raise ValueError(f'Method {method} not supported')
+
+    def _irregular_A_i(self, x_i, delta_x_i, delta_x_j):
+        return 1 - self._p(x_i) * delta_x_i * delta_x_j / (delta_x_i + delta_x_j)
+
+    def _regular_A_i(self, x_i, h):
         return 1 - self._p(x_i) * h / 2
 
-    def _B_i(self, x_i, h):
+    def _irregular_B_i(self, x_i, delta_x_i, delta_x_j):
+        return 1 + self._p(x_i) * delta_x_i * delta_x_j / (delta_x_i + delta_x_j)
+
+    def _regular_B_i(self, x_i, h):
         return 1 + self._p(x_i) * h / 2
 
-    def _C_i(self, x_i, h):
+    def _irregular_C_i(self, x_i, delta_x_i, delta_x_j):
+        return 2 - self._q(x_i) * delta_x_i * delta_x_j
+
+    def _regular_C_i(self, x_i, h):
         return 2 - self._q(x_i) * (h ** 2)
 
-    def _F_i(self, x_i, h):
+    def _irregular_F_i(self, x_i, delta_x_i, delta_x_j):
+        return self._f(x_i) * delta_x_i * delta_x_j
+
+    def _regular_F_i(self, x_i, h):
         return self._f(x_i) * (h ** 2)
-
-
-def y(x):
-    return 2 * np.exp(3 * x) + 3 * np.exp(4 * x) + 3 * x * np.exp(4 * x)
-
-
-def p(x):
-    return -7
-    # return -2 / (2 * x + 1)
-
-
-def q(x):
-    return 12
-    # return -12 / (2 * x + 1) ** 2
-
-
-def f(x):
-    return 3 * np.exp(4 * x)
-    # return (3 * x + 1) / (2 * x + 1) ** 2
-
-
-test_grid = np.linspace(1, 4, 100)
-test_boundary_conditions = (2 * np.exp(3) + 6 * np.exp(4), 2 * np.exp(12) + 15 * np.exp(16))
-
-solver = LinearNonhomogenousDifferentialEquation(p, q, f)
-test_solution = solver.solve_with_boundary_conditions(test_grid, test_boundary_conditions)
-model_solution = np.zeros((10000, 2))
-for i, x in enumerate(np.linspace(1, 4, 10000)):
-    model_solution[i] = [x, y(x)]
-error = np.zeros(300)
-for i in range(1, 300):
-    grid = np.linspace(1, 4, i)
-    test_solution = solver.solve_with_boundary_conditions(grid, test_boundary_conditions)
-    error[i - 1] = solver.compare_solutions(model_solution, test_solution)
-# print(solver.compare_solutions(model_solution, test_solution))
-pyplot.plot(np.linspace(1, 300, 300), error, color='brown')
-pyplot.show()
-
-grid = np.linspace(1, 4, 1_000_000)
-test_solution = solver.solve_with_boundary_conditions(grid, test_boundary_conditions)
-
-pyplot.plot(test_solution[:, 0], test_solution[:, 1])
-pyplot.plot(model_solution[:, 0], model_solution[:, 1])
-pyplot.show()
