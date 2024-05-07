@@ -13,7 +13,9 @@ a_n(x)y^{(n)}+a_{n-1}(x)y^{(n-1)}+...+a_1y'+a_0(x)y=f(x)
 ```
 
 where `y` is the unknown function, `f(x)` is a given function, and
-`a_i(x)`
+```math
+a_i(x)
+```
 are the known functions of `x`
 
 # How to run
@@ -52,7 +54,7 @@ Assume we have an equation of type
 y'' + p(x)y' + q(x)y = f(x)
 ```
 
-```
+```python
 from solver import LinearNonhomogenousDifferentialEquation
 
 def p(x):
